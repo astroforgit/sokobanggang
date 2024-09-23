@@ -349,6 +349,9 @@
                     cell === BOMB_RANGE_BONUS
                 );
             }
+
+
+
     
             function processPlayerMove() {
                 if (!playerInput || playerPositions.length === 0) return; // No input to process
@@ -713,6 +716,12 @@
                     }
                 }
             }
+
+            function isActor(cell) {
+                  if (PLAYER_ICONS.includes(cell) || NPC_SYMBOLS.includes(cell)) return true;   
+                  return false;  
+            }
+            
     
             function updateNPCs() {
                 for (let npc of npcPositions) {
@@ -743,7 +752,8 @@
                             nextCell === FLOOR ||
                             nextCell === GOAL ||
                             nextCell === BOMB_CAPACITY_BONUS ||
-                            nextCell === BOMB_RANGE_BONUS 
+                            nextCell === BOMB_RANGE_BONUS ||
+                            isActor(nextCell)
                         ) {
                             // Check if another NPC is not at this position
                             let occupied = false;
@@ -760,7 +770,6 @@
                                 if (player.x === newX && player.y === newY) {
                                     // Player is killed by NPC
                                     playerPositions.splice(i, 1); // Remove player
-                                    alert('Player ' + (i + 1) + ' was killed by an NPC!');
                                     occupied = true; // Set occupied to true to prevent NPC from moving into the space
                                     break;
                                 }
