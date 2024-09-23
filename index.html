@@ -353,172 +353,116 @@
 
 
     
-            function processPlayerMove() {
-                if (!playerInput || playerPositions.length === 0) return; // No input to process
-    
-                let dx = playerInput.dx;
-                let dy = playerInput.dy;
-                let teamIcon = playerInput.teamIcon;
-    
-                let activeIndex = activePlayerIndices[teamIcon];
-                if (activeIndex === undefined) return;
-                let currentPlayer = playerPositions[activeIndex];
-                let newX = currentPlayer.x + dx;
-                let newY = currentPlayer.y + dy;
-    
-                // Out of bounds check
-                if (newY < 0 || newY >= level.length || newX < 0 || newX >= level[0].length) {
-                    playerInput = null; // Reset input
-                    return;
-                }
-    
-                let nextCell = getCellContent(newX, newY);
-    
-                // Check if the next position is occupied by another player or NPC
-                for (let i = 0; i < playerPositions.length; i++) {
-                    if (i !== activeIndex && newX === playerPositions[i].x && newY === playerPositions[i].y) {
-                        playerInput = null; // Reset input
-                        return; // Cannot move into another player's space
-                    }
-                }
-                for (let npc of npcPositions) {
-                    if (newX === npc.x && newY === npc.y) {
-                        playerInput = null; // Reset input
-                        return; // Cannot move into an NPC's space
-                    }
-                }
-    
-                if (nextCell === WALL || nextCell === BOMB) {
-                    playerInput = null; // Reset input
-                    return;
-                }
-    
-                if (
-                    nextCell === FLOOR ||
-                    nextCell === GOAL ||
-                    nextCell === BOMB_CAPACITY_BONUS ||
-                    nextCell === BOMB_RANGE_BONUS
-                ) {
-                    // Check for bonuses
-                    for (let i = bonuses.length - 1; i >= 0; i--) {
-                        let bonus = bonuses[i];
-                        if (bonus.x === newX && bonus.y === newY) {
-                            collectBonus(activeIndex, bonus);
-                            bonuses.splice(i, 1); // Remove bonus from the map
-                        }
-                    }
-    
-                    // Move player
-                    currentPlayer.x = newX;
-                    currentPlayer.y = newY;
-                    moves++;
-                    // Reset blocked box attempts since a different move was made
-                    blockedBoxAttempts = {};
-                } else if (nextCell === BOX || nextCell === BOX_ON_GOAL || nextCell === PANCER_BOX) {
-                    // Try to push the box or pancer box
-                    let boxNewX = newX + dx;
-                    let boxNewY = newY + dy;
-    
-                    // Out of bounds check for the box
-                    if (
-                        boxNewY < 0 ||
-                        boxNewY >= level.length ||
-                        boxNewX < 0 ||
-                        boxNewX >= level[0].length
-                    ) {
-                        playerInput = null; // Reset input
-                        return;
-                    }
-    
-                    let nextNextCell = getCellContent(boxNewX, boxNewY);
-    
-                    // Check if another player or NPC is blocking the box
-                    let blockingEntity = false;
-                    for (let i = 0; i < playerPositions.length; i++) {
-                        if (boxNewX === playerPositions[i].x && boxNewY === playerPositions[i].y) {
-                            blockingEntity = true;
-                            break;
-                        }
-                    }
-                    for (let npc of npcPositions) {
-                        if (boxNewX === npc.x && boxNewY === npc.y) {
-                            blockingEntity = true;
-                            break;
-                        }
-                    }
-    
-                    if (blockingEntity) {
-                        // Increment the blocked box attempt counter
-                        let boxKey = newX + ',' + newY;
-                        if (!blockedBoxAttempts[boxKey]) {
-                            blockedBoxAttempts[boxKey] = {
-                                count: 1,
-                                playerIndex: activeIndex,
-                            };
-                        } else {
-                            if (blockedBoxAttempts[boxKey].playerIndex === activeIndex) {
-                                blockedBoxAttempts[boxKey].count++;
-                            } else {
-                                blockedBoxAttempts[boxKey] = {
-                                    count: 1,
-                                    playerIndex: activeIndex,
-                                };
-                            }
-                        }
-    
-                        if (blockedBoxAttempts[boxKey].count >= 4) {
-                            // Remove the box
-                            level[newY][newX] = FLOOR;
-                            delete blockedBoxAttempts[boxKey];
-                        }
-    
-                        playerInput = null; // Reset input
-                        return;
-                    }
-    
-                    // Check if the box can be pushed into the next cell
-                    if (
-                        nextNextCell === FLOOR ||
-                        nextNextCell === GOAL ||
-                        nextNextCell === BOMB_CAPACITY_BONUS ||
-                        nextNextCell === BOMB_RANGE_BONUS
-                    ) {
-                        if (nextNextCell === GOAL && nextCell === BOX) {
-                            level[boxNewY][boxNewX] = BOX_ON_GOAL;
-                            // Start timer to remove box after 3 seconds (12 frames)
-                            boxesOnGoals.push({
-                                x: boxNewX,
-                                y: boxNewY,
-                                timer: 12,
-                                playerIndex: activeIndex, // To award point later
-                            });
-                        } else {
-                            level[boxNewY][boxNewX] = nextCell; // Move box or pancer box
-                        }
-    
-                        if (nextCell === BOX_ON_GOAL) {
-                            level[newY][newX] = GOAL;
-                        } else {
-                            level[newY][newX] = FLOOR;
-                        }
-    
-                        currentPlayer.x = newX;
-                        currentPlayer.y = newY;
-                        moves++;
-    
-                        // Reset blocked box attempts since the box moved
-                        blockedBoxAttempts = {};
-                    } else {
-                        playerInput = null; // Reset input
-                        return;
-                    }
-                } else {
-                    playerInput = null; // Reset input
-                    return;
-                }
-    
-                playerInput = null; // Reset input after processing
+    function processPlayerMove() {
+    if (!playerInput || playerPositions.length === 0) return; // No input to process
+
+    let dx = playerInput.dx;
+    let dy = playerInput.dy;
+    let teamIcon = playerInput.teamIcon;
+
+    let activeIndex = activePlayerIndices[teamIcon];
+    if (activeIndex === undefined) return;
+    let currentPlayer = playerPositions[activeIndex];
+    let newX = currentPlayer.x + dx;
+    let newY = currentPlayer.y + dy;
+
+    // Out of bounds check
+    if (newY < 0 || newY >= level.length || newX < 0 || newX >= level[0].length) {
+        playerInput = null; // Reset input
+        return;
+    }
+
+    let nextCell = getCellContent(newX, newY);
+
+    // Check if the next position is occupied by another player or NPC
+    for (let i = 0; i < playerPositions.length; i++) {
+        if (i !== activeIndex && newX === playerPositions[i].x && newY === playerPositions[i].y) {
+            playerInput = null; // Reset input
+            return; // Cannot move into another player's space
+        }
+    }
+    for (let npc of npcPositions) {
+        if (newX === npc.x && newY === npc.y) {
+            playerInput = null; // Reset input
+            return; // Cannot move into an NPC's space
+        }
+    }
+
+    if (nextCell === WALL || nextCell === BOMB) {
+        playerInput = null; // Reset input
+        return;
+    }
+
+    // Check if the player can move
+    if (nextCell === FLOOR || nextCell === GOAL || nextCell === BOMB_CAPACITY_BONUS || nextCell === BOMB_RANGE_BONUS) {
+        // Check for bonuses
+        for (let i = bonuses.length - 1; i >= 0; i--) {
+            let bonus = bonuses[i];
+            if (bonus.x === newX && bonus.y === newY) {
+                collectBonus(activeIndex, bonus);
+                bonuses.splice(i, 1); // Remove bonus from the map
             }
+        }
+
+        // Move player
+        currentPlayer.x = newX;
+        currentPlayer.y = newY;
+        moves++;
+        blockedBoxAttempts = {}; // Reset blocked box attempts
+    } else if (isBoxType(nextCell) || nextCell === BOX_ON_GOAL) {
+        // Try to push the box or Pancer Box
+        let boxNewX = newX + dx;
+        let boxNewY = newY + dy;
+
+        // Out of bounds check for the box
+        if (boxNewY < 0 || boxNewY >= level.length || boxNewX < 0 || boxNewX >= level[0].length) {
+            playerInput = null; // Reset input
+            return;
+        }
+
+        let nextNextCell = getCellContent(boxNewX, boxNewY);
+
+        // Check if the box can be pushed into the next cell
+        if (nextNextCell === FLOOR || nextNextCell === GOAL || nextNextCell === BOMB_CAPACITY_BONUS || nextNextCell === BOMB_RANGE_BONUS) {
+            if (nextNextCell === GOAL && isBoxType(nextCell)) {
+                // Change the Pancer Box or Box into BOX_ON_GOAL if it reaches a goal
+                level[boxNewY][boxNewX] = BOX_ON_GOAL;
+                // Add to the list to track removal or scoring
+                boxesOnGoals.push({
+                    x: boxNewX,
+                    y: boxNewY,
+                    timer: 12, // Timer to remove the box after 3 seconds (12 frames)
+                    playerIndex: activeIndex, // To award point later
+                });
+            } else {
+                // Move the box or Pancer Box
+                level[boxNewY][boxNewX] = nextCell;
+            }
+
+            // Update the old box position
+            if (nextCell === BOX_ON_GOAL) {
+                level[newY][newX] = GOAL; // Restore goal if it was a box on goal
+            } else {
+                level[newY][newX] = FLOOR; // Clear the previous box position
+            }
+
+            currentPlayer.x = newX;
+            currentPlayer.y = newY;
+            moves++;
+
+            blockedBoxAttempts = {}; // Reset blocked box attempts since the box moved
+        } else {
+            playerInput = null; // Reset input
+            return;
+        }
+    } else {
+        playerInput = null; // Reset input
+        return;
+    }
+
+    playerInput = null; // Reset input after processing
+}
+
     
             function collectBonus(playerIndex, bonus) {
                 if (bonus.type === 'bombCapacity') {
@@ -786,34 +730,40 @@
                     }
                 }
             }
+
+function isBoxType(cell) {
+    return cell === BOX || cell === PANCER_BOX;
+}            
+
+
     
-            function placeBomb(teamIcon) {
-                if (playerPositions.length === 0) return;
-    
-                let playerIndex = activePlayerIndices[teamIcon];
-                if (playerIndex === undefined) return;
-    
-                let currentPlayer = playerPositions[playerIndex];
-                let x = currentPlayer.x;
-                let y = currentPlayer.y;
-    
-                // Check if player has reached bomb capacity
-                if (playersBombs[playerIndex].length >= playersBombCapacity[playerIndex]) {
-                    return; // Can't place more bombs
-                }
-    
-                // Check if there's already a bomb at this position
-                for (let bomb of bombs) {
-                    if (bomb.x === x && bomb.y === y) {
-                        return; // Can't place another bomb here
-                    }
-                }
-    
-                // Place the bomb
-                let newBomb = { x: x, y: y, timer: 8, playerIndex: playerIndex };
-                bombs.push(newBomb);
-                playersBombs[playerIndex].push(newBomb); // Add bomb to player's active bombs
-            }
+function placeBomb(teamIcon) {
+    if (playerPositions.length === 0) return;
+
+    let playerIndex = activePlayerIndices[teamIcon]; // Get active player for the team
+    if (playerIndex === undefined) return;
+
+    let currentPlayer = playerPositions[playerIndex];
+    let x = currentPlayer.x;
+    let y = currentPlayer.y;
+
+    // Check if player has reached bomb capacity
+    if (playersBombs[playerIndex].length >= playersBombCapacity[playerIndex]) {
+        return; // Can't place more bombs
+    }
+
+    // Check if there's already a bomb at this position
+    for (let bomb of bombs) {
+        if (bomb.x === x && bomb.y === y) {
+            return; // Can't place another bomb here
+        }
+    }
+
+    // Place the bomb
+    let newBomb = { x: x, y: y, timer: 8, playerIndex: playerIndex };
+    bombs.push(newBomb);
+    playersBombs[playerIndex].push(newBomb); // Add bomb to player's active bombs
+}
     
             // Event listener for keyboard input and player switching
             document.addEventListener('keydown', function(event) {
@@ -829,13 +779,15 @@
                         event.preventDefault();
                     }
                     // Place a bomb (both teams can use 'Enter')
-                    else if (event.key === 'Enter') {
-                        // Decide which team's active player can place a bomb
-                        // For simplicity, let's allow both teams to place bombs with 'Enter'
-                        placeBomb('😀');
-                        placeBomb('😎');
-                        event.preventDefault();
-                    }
+                else if (event.key === 'Enter') {
+                    placeBomb('😀'); // Only active player of Team 1 places bomb
+                    event.preventDefault();
+                }
+                // Place a bomb for the active player of Team 2 using 'B'
+                else if (event.key === 'b') {
+                    placeBomb('😎'); // Only active player of Team 2 places bomb
+                    event.preventDefault();
+                }
                 }
             });
     
