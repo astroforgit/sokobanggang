@@ -353,7 +353,7 @@
 
 
     
-    function processPlayerMove() {
+     function processPlayerMove() {
     if (!playerInput || playerPositions.length === 0) return; // No input to process
 
     let dx = playerInput.dx;
@@ -433,6 +433,7 @@
                     y: boxNewY,
                     timer: 12, // Timer to remove the box after 3 seconds (12 frames)
                     playerIndex: activeIndex, // To award point later
+                    boxType:nextCell
                 });
             } else {
                 // Move the box or Pancer Box
@@ -441,7 +442,12 @@
 
             // Update the old box position
             if (nextCell === BOX_ON_GOAL) {
-                level[newY][newX] = GOAL; // Restore goal if it was a box on goal
+                // If the box was on the goal, check what it originally was and restore it
+                debugger;
+                let foundlast = boxesOnGoals.find((el)=>el.x==newX && el.y==newY);
+                boxesOnGoals = boxesOnGoals.map((el)=>el.x!=newX && el.y!=newY);
+                level[newY][newX] = GOAL;
+                level[boxNewY][boxNewX] = foundlast.boxType; // Restore it to its original state (either BOX or PANCER_BOX)
             } else {
                 level[newY][newX] = FLOOR; // Clear the previous box position
             }
@@ -462,6 +468,7 @@
 
     playerInput = null; // Reset input after processing
 }
+
 
     
             function collectBonus(playerIndex, bonus) {
