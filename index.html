@@ -273,12 +273,12 @@
                     }
                     gameDiv.appendChild(rowDiv);
                 }
-                if (playerPositions.length > 0) {
-                    document.getElementById('moves').textContent = 'Moves: ' + moves;
-                } else {
-                    document.getElementById('moves').textContent = 'Game Over';
+
+
+                if (playerPositions.length ==0) {
+                  document.getElementById('moves').textContent = 'Game Over';
                 }
-    
+                
                 // Display players' scores and stats
                 let scoresDiv = document.getElementById('scores');
                 scoresDiv.innerHTML = '';
