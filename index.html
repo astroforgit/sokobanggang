@@ -1,0 +1,899 @@
+<!DOCTYPE html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width" />
+        <title>Sokoban Game with Teams and Active Player Highlight</title>
+        <style>
+            body {
+                font-family: Arial, sans-serif;
+                text-align: center;
+            }
+            #game {
+                display: inline-block;
+                font-size: 16px;
+                line-height: 16px;
+                margin-top: 20px;
+            }
+            .row {
+                height: 16px;
+            }
+            .inactive-player {
+                opacity: 0.5; /* Inactive players appear at 50% opacity */
+            }
+            button {
+                margin-top: 20px;
+                padding: 10px 20px;
+                font-size: 16px;
+            }
+            #info {
+                margin-top: 10px;
+            }
+            #scores {
+                margin-top: 10px;
+            }
+        </style>
+    </head>
+    <body>
+        <h1>Sokoban Game with Teams and Active Player Highlight</h1>
+        <div id="game"></div>
+        <div id="info">
+            <div id="moves">Moves: 0</div>
+            <div id="scores"></div>
+        </div>
+        <button onclick="resetGame()">Reset Game</button>
+        <button onclick="generateNewMap()">Generate New Map</button>
+    
+        <script>
+            // Constants
+            const WALL = '⬛️';
+            const BOX = '📦';
+            const PANCER_BOX = '🛡️'; // Pancer box symbol
+            const GOAL = '❌';
+            const BOX_ON_GOAL = '✅';
+            const FLOOR = '⬜️';
+    
+            const PLAYER_ICONS = ['😀', '😀', '😎', '😎']; // Icons for players (teams)
+            const NPC_SYMBOLS = ['👾']; // NPC symbol
+    
+            const BOMB = '💣'; // Bomb symbol
+            const EXPLOSION = '💥'; // Explosion symbol
+    
+            const BOMB_CAPACITY_BONUS = '💎'; // Bonus symbol for additional bomb capacity
+            const BOMB_RANGE_BONUS = '🔥'; // Bonus symbol for bomb range extension
+    
+            // Game settings
+            const BOARD_WIDTH = 20;
+            const BOARD_HEIGHT = 20;
+    
+            // Game variables
+            let levelTemplate = [];
+            let level = [];
+            let playerPositions = [];
+            let npcPositions = [];
+            let activePlayerIndices = {}; // Object to keep track of active player for each team
+            let moves = 0;
+            let playerInput = null; // Stores the player's input direction
+            let frameCount = 0;
+            let bombs = []; // Array to keep track of bombs
+            let explosions = []; // Array to keep track of explosions
+            let bonuses = []; // Array to keep track of bonuses on the map
+    
+            let playersScores = []; // Array to keep track of players' scores
+            let playersBombs = []; // Tracks the bombs planted by each player
+            let playersBombCapacity = []; // Maximum number of bombs each player can have active
+            let playersBombRange = []; // Bomb blast radius for each player
+    
+            let boxesOnGoals = []; // Array to track boxes that are on goals and their timers
+            let blockedBoxAttempts = {}; // Object to track continuous push attempts on blocked boxes
+    
+            function createRandomMap() {
+                // Initialize the levelTemplate with FLOOR
+                levelTemplate = [];
+                for (let y = 0; y < BOARD_HEIGHT; y++) {
+                    let row = [];
+                    for (let x = 0; x < BOARD_WIDTH; x++) {
+                        row.push(FLOOR);
+                    }
+                    levelTemplate.push(row);
+                }
+    
+                // Add walls around the map
+                for (let x = 0; x < BOARD_WIDTH; x++) {
+                    levelTemplate[0][x] = WALL;
+                    levelTemplate[BOARD_HEIGHT - 1][x] = WALL;
+                }
+                for (let y = 0; y < BOARD_HEIGHT; y++) {
+                    levelTemplate[y][0] = WALL;
+                    levelTemplate[y][BOARD_WIDTH - 1] = WALL;
+                }
+    
+                // Randomly place inner walls
+                let wallCount = Math.floor((BOARD_WIDTH * BOARD_HEIGHT) * 0.15); // 15% walls
+                placeRandomly(WALL, wallCount);
+    
+                // Randomly place boxes and goals
+                let boxCount = Math.floor((BOARD_WIDTH * BOARD_HEIGHT) * 0.05); // 5% boxes
+                placeRandomly(BOX, boxCount);
+                placeRandomly(GOAL, boxCount); // Ensure same number of goals as boxes
+    
+                // Randomly place pancer boxes
+                let pancerBoxCount = Math.floor((BOARD_WIDTH * BOARD_HEIGHT) * 0.02); // 2% pancer boxes
+                placeRandomly(PANCER_BOX, pancerBoxCount);
+    
+                // Place players at random positions
+                playerPositions = [];
+                playersScores = [];
+                playersBombs = [];
+                playersBombCapacity = [];
+                playersBombRange = [];
+                for (let i = 0; i < PLAYER_ICONS.length; i++) {
+                    let pos = findRandomEmptyPosition();
+                    let teamIcon = PLAYER_ICONS[i]; // Assign team based on icon
+                    // Each player is an object with additional properties
+                    playerPositions.push({
+                        x: pos.x,
+                        y: pos.y,
+                        icon: teamIcon, // Assign icon from PLAYER_ICONS
+                        team: teamIcon  // Use icon to represent team
+                    });
+                    playersScores[i] = 0; // Initialize score
+                    playersBombs[i] = []; // Initialize bomb list
+                    playersBombCapacity[i] = 1; // Start with one bomb capacity
+                    playersBombRange[i] = 1; // Start with bomb range of 1
+                }
+    
+                // Place NPC
+                npcPositions = [];
+                placeNPCsRandomly(1);
+            }
+    
+            function placeRandomly(symbol, count) {
+                let emptyPositions = getEmptyPositions();
+                emptyPositions.sort(() => Math.random() - 0.5);
+    
+                for (let i = 0; i < count && emptyPositions.length > 0; i++) {
+                    let pos = emptyPositions.pop();
+                    levelTemplate[pos.y][pos.x] = symbol;
+                }
+            }
+    
+            function getEmptyPositions() {
+                let positions = [];
+                for (let y = 1; y < BOARD_HEIGHT - 1; y++) {
+                    for (let x = 1; x < BOARD_WIDTH - 1; x++) {
+                        if (levelTemplate[y][x] === FLOOR) {
+                            positions.push({ x: x, y: y });
+                        }
+                    }
+                }
+                return positions;
+            }
+    
+            function findRandomEmptyPosition() {
+                let emptyPositions = getEmptyPositions();
+                if (emptyPositions.length === 0) {
+                    return { x: 1, y: 1 }; // Default position if no empty position
+                }
+                emptyPositions.sort(() => Math.random() - 0.5);
+                return emptyPositions.pop();
+            }
+    
+            function initializeLevel() {
+                level = JSON.parse(JSON.stringify(levelTemplate)); // Deep copy of the level template
+                bombs = [];
+                explosions = [];
+                boxesOnGoals = [];
+                blockedBoxAttempts = {};
+                bonuses = [];
+    
+                // Active player indices for each team
+                activePlayerIndices = {};
+                for (let i = 0; i < playerPositions.length; i++) {
+                    let teamIcon = playerPositions[i].team;
+                    if (!(teamIcon in activePlayerIndices)) {
+                        activePlayerIndices[teamIcon] = i;
+                    }
+                }
+    
+                moves = 0;
+            }
+    
+            function placeNPCsRandomly(count) {
+                let emptyPositions = getEmptyPositions();
+                emptyPositions.sort(() => Math.random() - 0.5);
+    
+                for (let i = 0; i < count && emptyPositions.length > 0; i++) {
+                    let pos = emptyPositions.pop();
+                    npcPositions.push({ x: pos.x, y: pos.y, symbol: NPC_SYMBOLS[0] });
+                }
+            }
+    
+            function drawGame() {
+                let gameDiv = document.getElementById('game');
+                gameDiv.innerHTML = '';
+                for (let y = 0; y < level.length; y++) {
+                    let rowDiv = document.createElement('div');
+                    rowDiv.className = 'row';
+                    for (let x = 0; x < level[y].length; x++) {
+                        let cell = level[y][x];
+                        // Prioritize drawing bonuses, bombs, and explosions
+                        let cellToDraw = cell;
+    
+                        // Draw bonuses
+                        for (let bonus of bonuses) {
+                            if (bonus.x === x && bonus.y === y) {
+                                cellToDraw = bonus.symbol;
+                                break;
+                            }
+                        }
+                        // Draw bombs
+                        for (let bomb of bombs) {
+                            if (bomb.x === x && bomb.y === y) {
+                                cellToDraw = BOMB;
+                                break;
+                            }
+                        }
+                        // Draw explosions
+                        for (let explosion of explosions) {
+                            if (explosion.x === x && explosion.y === y) {
+                                cellToDraw = EXPLOSION;
+                                break;
+                            }
+                        }
+                        // Draw NPCs
+                        for (let npc of npcPositions) {
+                            if (npc.x === x && npc.y === y) {
+                                cellToDraw = npc.symbol;
+                                break;
+                            }
+                        }
+                        // Draw players
+                        for (let i = 0; i < playerPositions.length; i++) {
+                            let player = playerPositions[i];
+                            if (player.x === x && player.y === y) {
+                                let playerSpan = document.createElement('span');
+                                playerSpan.textContent = player.icon;
+    
+                                // Apply styles to inactive players
+                                let teamIcon = player.team;
+                                if (i !== activePlayerIndices[teamIcon]) {
+                                    playerSpan.classList.add('inactive-player');
+                                }
+                                cellToDraw = playerSpan.outerHTML;
+                                break;
+                            }
+                        }
+                        // Append the cell content
+                        if (typeof cellToDraw === 'string') {
+                            rowDiv.innerHTML += cellToDraw;
+                        } else {
+                            rowDiv.appendChild(cellToDraw);
+                        }
+                    }
+                    gameDiv.appendChild(rowDiv);
+                }
+                if (playerPositions.length > 0) {
+                    document.getElementById('moves').textContent = 'Moves: ' + moves;
+                } else {
+                    document.getElementById('moves').textContent = 'Game Over';
+                }
+    
+                // Display players' scores and stats
+                let scoresDiv = document.getElementById('scores');
+                scoresDiv.innerHTML = '';
+                for (let i = 0; i < playersScores.length; i++) {
+                    scoresDiv.innerHTML +=
+                        'Player ' + (i + 1) +
+                        ' (' + playerPositions[i].icon + ')' +
+                        ': Score: ' + playersScores[i] +
+                        ', Bombs: ' + playersBombs[i].length + '/' + playersBombCapacity[i] +
+                        ', Range: ' + playersBombRange[i] +
+                        '<br>';
+                }
+            }
+    
+            function resetGame() {
+                initializeLevel();
+                drawGame();
+            }
+    
+            function generateNewMap() {
+                createRandomMap();
+                initializeLevel();
+                drawGame();
+            }
+    
+            function isWin() {
+                // We don't have a win condition in this version, so we return false
+                return false;
+            }
+    
+            function getCellContent(x, y) {
+                // Return the correct cell content considering bonuses, bombs, and explosions
+                for (let explosion of explosions) {
+                    if (explosion.x === x && explosion.y === y) {
+                        return EXPLOSION;
+                    }
+                }
+                for (let bomb of bombs) {
+                    if (bomb.x === x && bomb.y === y) {
+                        return BOMB;
+                    }
+                }
+                for (let bonus of bonuses) {
+                    if (bonus.x === x && bonus.y === y) {
+                        return bonus.symbol;
+                    }
+                }
+                for (let npc of npcPositions) {
+                    if (npc.x === x && npc.y === y) {
+                        return npc.symbol;
+                    }
+                }
+                for (let player of playerPositions) {
+                    if (player.x === x && player.y === y) {
+                        return player.icon;
+                    }
+                }
+                return level[y][x];
+            }
+    
+            function isCellPassable(x, y) {
+                let cell = getCellContent(x, y);
+                // Check if the cell is passable for players and NPCs
+                return (
+                    cell === FLOOR ||
+                    cell === GOAL ||
+                    cell === BOMB_CAPACITY_BONUS ||
+                    cell === BOMB_RANGE_BONUS
+                );
+            }
+    
+            function processPlayerMove() {
+                if (!playerInput || playerPositions.length === 0) return; // No input to process
+    
+                let dx = playerInput.dx;
+                let dy = playerInput.dy;
+                let teamIcon = playerInput.teamIcon;
+    
+                let activeIndex = activePlayerIndices[teamIcon];
+                if (activeIndex === undefined) return;
+                let currentPlayer = playerPositions[activeIndex];
+                let newX = currentPlayer.x + dx;
+                let newY = currentPlayer.y + dy;
+    
+                // Out of bounds check
+                if (newY < 0 || newY >= level.length || newX < 0 || newX >= level[0].length) {
+                    playerInput = null; // Reset input
+                    return;
+                }
+    
+                let nextCell = getCellContent(newX, newY);
+    
+                // Check if the next position is occupied by another player or NPC
+                for (let i = 0; i < playerPositions.length; i++) {
+                    if (i !== activeIndex && newX === playerPositions[i].x && newY === playerPositions[i].y) {
+                        playerInput = null; // Reset input
+                        return; // Cannot move into another player's space
+                    }
+                }
+                for (let npc of npcPositions) {
+                    if (newX === npc.x && newY === npc.y) {
+                        playerInput = null; // Reset input
+                        return; // Cannot move into an NPC's space
+                    }
+                }
+    
+                if (nextCell === WALL || nextCell === BOMB) {
+                    playerInput = null; // Reset input
+                    return;
+                }
+    
+                if (
+                    nextCell === FLOOR ||
+                    nextCell === GOAL ||
+                    nextCell === BOMB_CAPACITY_BONUS ||
+                    nextCell === BOMB_RANGE_BONUS
+                ) {
+                    // Check for bonuses
+                    for (let i = bonuses.length - 1; i >= 0; i--) {
+                        let bonus = bonuses[i];
+                        if (bonus.x === newX && bonus.y === newY) {
+                            collectBonus(activeIndex, bonus);
+                            bonuses.splice(i, 1); // Remove bonus from the map
+                        }
+                    }
+    
+                    // Move player
+                    currentPlayer.x = newX;
+                    currentPlayer.y = newY;
+                    moves++;
+                    // Reset blocked box attempts since a different move was made
+                    blockedBoxAttempts = {};
+                } else if (nextCell === BOX || nextCell === BOX_ON_GOAL || nextCell === PANCER_BOX) {
+                    // Try to push the box or pancer box
+                    let boxNewX = newX + dx;
+                    let boxNewY = newY + dy;
+    
+                    // Out of bounds check for the box
+                    if (
+                        boxNewY < 0 ||
+                        boxNewY >= level.length ||
+                        boxNewX < 0 ||
+                        boxNewX >= level[0].length
+                    ) {
+                        playerInput = null; // Reset input
+                        return;
+                    }
+    
+                    let nextNextCell = getCellContent(boxNewX, boxNewY);
+    
+                    // Check if another player or NPC is blocking the box
+                    let blockingEntity = false;
+                    for (let i = 0; i < playerPositions.length; i++) {
+                        if (boxNewX === playerPositions[i].x && boxNewY === playerPositions[i].y) {
+                            blockingEntity = true;
+                            break;
+                        }
+                    }
+                    for (let npc of npcPositions) {
+                        if (boxNewX === npc.x && boxNewY === npc.y) {
+                            blockingEntity = true;
+                            break;
+                        }
+                    }
+    
+                    if (blockingEntity) {
+                        // Increment the blocked box attempt counter
+                        let boxKey = newX + ',' + newY;
+                        if (!blockedBoxAttempts[boxKey]) {
+                            blockedBoxAttempts[boxKey] = {
+                                count: 1,
+                                playerIndex: activeIndex,
+                            };
+                        } else {
+                            if (blockedBoxAttempts[boxKey].playerIndex === activeIndex) {
+                                blockedBoxAttempts[boxKey].count++;
+                            } else {
+                                blockedBoxAttempts[boxKey] = {
+                                    count: 1,
+                                    playerIndex: activeIndex,
+                                };
+                            }
+                        }
+    
+                        if (blockedBoxAttempts[boxKey].count >= 4) {
+                            // Remove the box
+                            level[newY][newX] = FLOOR;
+                            delete blockedBoxAttempts[boxKey];
+                        }
+    
+                        playerInput = null; // Reset input
+                        return;
+                    }
+    
+                    // Check if the box can be pushed into the next cell
+                    if (
+                        nextNextCell === FLOOR ||
+                        nextNextCell === GOAL ||
+                        nextNextCell === BOMB_CAPACITY_BONUS ||
+                        nextNextCell === BOMB_RANGE_BONUS
+                    ) {
+                        if (nextNextCell === GOAL && nextCell === BOX) {
+                            level[boxNewY][boxNewX] = BOX_ON_GOAL;
+                            // Start timer to remove box after 3 seconds (12 frames)
+                            boxesOnGoals.push({
+                                x: boxNewX,
+                                y: boxNewY,
+                                timer: 12,
+                                playerIndex: activeIndex, // To award point later
+                            });
+                        } else {
+                            level[boxNewY][boxNewX] = nextCell; // Move box or pancer box
+                        }
+    
+                        if (nextCell === BOX_ON_GOAL) {
+                            level[newY][newX] = GOAL;
+                        } else {
+                            level[newY][newX] = FLOOR;
+                        }
+    
+                        currentPlayer.x = newX;
+                        currentPlayer.y = newY;
+                        moves++;
+    
+                        // Reset blocked box attempts since the box moved
+                        blockedBoxAttempts = {};
+                    } else {
+                        playerInput = null; // Reset input
+                        return;
+                    }
+                } else {
+                    playerInput = null; // Reset input
+                    return;
+                }
+    
+                playerInput = null; // Reset input after processing
+            }
+    
+            function collectBonus(playerIndex, bonus) {
+                if (bonus.type === 'bombCapacity') {
+                    playersBombCapacity[playerIndex]++;
+                } else if (bonus.type === 'bombRange') {
+                    playersBombRange[playerIndex]++;
+                }
+            }
+    
+            function updateGame() {
+                // Process player input
+                processPlayerMove();
+    
+                // Update bombs
+                updateBombs();
+    
+                // Update explosions
+                updateExplosions();
+    
+                // Update boxes on goals
+                updateBoxesOnGoals();
+    
+                // Update NPC movements every frame
+                updateNPCs();
+    
+                frameCount++;
+            }
+    
+            function updateBombs() {
+                let explodedBombs = [];
+    
+                // Update bombs
+                for (let i = bombs.length - 1; i >= 0; i--) {
+                    let bomb = bombs[i];
+                    bomb.timer--;
+    
+                    if (bomb.timer <= 0) {
+                        // Bomb explodes
+                        explodedBombs.push({
+                            x: bomb.x,
+                            y: bomb.y,
+                            playerIndex: bomb.playerIndex,
+                        });
+    
+                        // Remove bomb from bombs array
+                        bombs.splice(i, 1);
+    
+                        // Remove bomb from the player's active bombs
+                        let playerBombs = playersBombs[bomb.playerIndex];
+                        for (let j = playerBombs.length - 1; j >= 0; j--) {
+                            if (playerBombs[j].x === bomb.x && playerBombs[j].y === bomb.y) {
+                                playerBombs.splice(j, 1);
+                                break;
+                            }
+                        }
+                    }
+                }
+    
+                // Handle explosions
+                for (let explosion of explodedBombs) {
+                    triggerExplosion(explosion.x, explosion.y, explosion.playerIndex);
+                }
+            }
+    
+            function triggerExplosion(x, y, playerIndex) {
+                let range = playersBombRange[playerIndex];
+    
+                let explosionPositions = [{ x: x, y: y }];
+    
+                // Expand explosion in all four directions based on range
+                let directions = [
+                    { dx: 0, dy: -1 }, // Up
+                    { dx: 0, dy: 1 },  // Down
+                    { dx: -1, dy: 0 }, // Left
+                    { dx: 1, dy: 0 }   // Right
+                ];
+    
+                for (let dir of directions) {
+                    for (let r = 1; r <= range; r++) {
+                        let nx = x + dir.dx * r;
+                        let ny = y + dir.dy * r;
+    
+                        // Check bounds
+                        if (ny < 0 || ny >= level.length || nx < 0 || nx >= level[0].length) {
+                            break;
+                        }
+    
+                        let cell = getCellContent(nx, ny);
+    
+                        // Stop explosion at walls and pancer boxes
+                        if (cell === WALL || cell === PANCER_BOX) {
+                            break;
+                        }
+    
+                        explosionPositions.push({ x: nx, y: ny });
+    
+                        // Stop explosion if it hits a box
+                        if (cell === BOX || cell === BOX_ON_GOAL) {
+                            break;
+                        }
+                    }
+                }
+    
+                // Process explosion positions
+                for (let pos of explosionPositions) {
+                    let cell = getCellContent(pos.x, pos.y);
+    
+                    // Skip walls, pancer boxes, and goals (do not remove boxes on goals)
+                    if (cell === WALL || cell === GOAL || cell === BOX_ON_GOAL || cell === PANCER_BOX) {
+                        continue;
+                    }
+    
+                    // Remove bonuses if they are in the explosion path
+                    for (let i = bonuses.length - 1; i >= 0; i--) {
+                        let bonus = bonuses[i];
+                        if (bonus.x === pos.x && bonus.y === pos.y) {
+                            bonuses.splice(i, 1);
+                        }
+                    }
+    
+                    // Remove boxes and possibly generate a bonus
+                    if (cell === BOX) {
+                        // Remove the box from the level
+                        level[pos.y][pos.x] = FLOOR;
+    
+                        // Chance to generate a bonus
+                        if (Math.random() < 0.7) {
+                            generateBonus(pos.x, pos.y);
+                        }
+                    }
+    
+                    // Check for players
+                    for (let i = playerPositions.length - 1; i >= 0; i--) {
+                        let player = playerPositions[i];
+                        if (player.x === pos.x && player.y === pos.y) {
+                            // Player is hit by the explosion
+                            playerPositions.splice(i, 1); // Remove player
+                        }
+                    }
+    
+                    // Check for NPCs
+                    for (let i = npcPositions.length - 1; i >= 0; i--) {
+                        let npc = npcPositions[i];
+                        if (npc.x === pos.x && npc.y === pos.y) {
+                            // NPC is hit by the explosion
+                            npcPositions.splice(i, 1); // Remove NPC
+                        }
+                    }
+    
+                    // Remove bomb if there's any at this position
+                    for (let i = bombs.length - 1; i >= 0; i--) {
+                        let bomb = bombs[i];
+                        if (bomb.x === pos.x && bomb.y === pos.y) {
+                            bombs.splice(i, 1);
+                        }
+                    }
+    
+                    // Mark the explosion
+                    explosions.push({ x: pos.x, y: pos.y, timer: 4 }); // Explosion visible for 4 frames (1 second)
+                }
+            }
+    
+            function generateBonus(x, y) {
+                let bonusTypes = ['bombCapacity', 'bombRange'];
+                let randomType = bonusTypes[Math.floor(Math.random() * bonusTypes.length)];
+                let symbol = randomType === 'bombCapacity' ? BOMB_CAPACITY_BONUS : BOMB_RANGE_BONUS;
+    
+                bonuses.push({ x: x, y: y, type: randomType, symbol: symbol });
+            }
+    
+            function updateExplosions() {
+                // Update explosions
+                for (let i = explosions.length - 1; i >= 0; i--) {
+                    let explosion = explosions[i];
+                    explosion.timer--;
+    
+                    if (explosion.timer <= 0) {
+                        // Remove from explosions array
+                        explosions.splice(i, 1);
+                    }
+                }
+            }
+    
+            function updateBoxesOnGoals() {
+                for (let i = boxesOnGoals.length - 1; i >= 0; i--) {
+                    let box = boxesOnGoals[i];
+                    box.timer--;
+    
+                    if (box.timer <= 0) {
+                        // Remove the box from the goal
+                        level[box.y][box.x] = GOAL;
+                        // Award point to the player
+                        playersScores[box.playerIndex]++;
+                        boxesOnGoals.splice(i, 1);
+                    }
+                }
+            }
+    
+            function updateNPCs() {
+                for (let npc of npcPositions) {
+                    let directions = [
+                        { dx: 0, dy: -1 }, // Up
+                        { dx: 0, dy: 1 },  // Down
+                        { dx: -1, dy: 0 }, // Left
+                        { dx: 1, dy: 0 }   // Right
+                    ];
+    
+                    // Randomize directions
+                    directions.sort(() => Math.random() - 0.5);
+    
+                    // Try moving in a random direction
+                    for (let dir of directions) {
+                        let newX = npc.x + dir.dx;
+                        let newY = npc.y + dir.dy;
+    
+                        // Out of bounds check
+                        if (newY < 0 || newY >= level.length || newX < 0 || newX >= level[0].length) {
+                            continue;
+                        }
+    
+                        let nextCell = getCellContent(newX, newY);
+    
+                        // Check if the cell is passable
+                        if (
+                            nextCell === FLOOR ||
+                            nextCell === GOAL ||
+                            nextCell === BOMB_CAPACITY_BONUS ||
+                            nextCell === BOMB_RANGE_BONUS 
+                        ) {
+                            // Check if another NPC is not at this position
+                            let occupied = false;
+                            for (let otherNpc of npcPositions) {
+                                if (otherNpc !== npc && otherNpc.x === newX && otherNpc.y === newY) {
+                                    occupied = true;
+                                    break;
+                                }
+                            }
+    
+                            // Check if a player is at this position
+                            for (let i = playerPositions.length - 1; i >= 0; i--) {
+                                let player = playerPositions[i];
+                                if (player.x === newX && player.y === newY) {
+                                    // Player is killed by NPC
+                                    playerPositions.splice(i, 1); // Remove player
+                                    alert('Player ' + (i + 1) + ' was killed by an NPC!');
+                                    occupied = true; // Set occupied to true to prevent NPC from moving into the space
+                                    break;
+                                }
+                            }
+    
+                            if (!occupied) {
+                                npc.x = newX;
+                                npc.y = newY;
+                                break; // Move done, proceed to next NPC
+                            } else {
+                                break; // Skip to next direction
+                            }
+                        }
+                    }
+                }
+            }
+    
+            function placeBomb(teamIcon) {
+                if (playerPositions.length === 0) return;
+    
+                let playerIndex = activePlayerIndices[teamIcon];
+                if (playerIndex === undefined) return;
+    
+                let currentPlayer = playerPositions[playerIndex];
+                let x = currentPlayer.x;
+                let y = currentPlayer.y;
+    
+                // Check if player has reached bomb capacity
+                if (playersBombs[playerIndex].length >= playersBombCapacity[playerIndex]) {
+                    return; // Can't place more bombs
+                }
+    
+                // Check if there's already a bomb at this position
+                for (let bomb of bombs) {
+                    if (bomb.x === x && bomb.y === y) {
+                        return; // Can't place another bomb here
+                    }
+                }
+    
+                // Place the bomb
+                let newBomb = { x: x, y: y, timer: 8, playerIndex: playerIndex };
+                bombs.push(newBomb);
+                playersBombs[playerIndex].push(newBomb); // Add bomb to player's active bombs
+            }
+    
+            // Event listener for keyboard input and player switching
+            document.addEventListener('keydown', function(event) {
+                if (!playerInput) {
+                    // Controls for Team 1 ('😀') using arrow keys
+                    if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', ' '].includes(event.key)) {
+                        handleTeamInput('😀', event);
+                        event.preventDefault();
+                    }
+                    // Controls for Team 2 ('😎') using W, A, S, D, and 'Shift'
+                    else if (['w', 'a', 's', 'd', 'Shift'].includes(event.key)) {
+                        handleTeamInput('😎', event);
+                        event.preventDefault();
+                    }
+                    // Place a bomb (both teams can use 'Enter')
+                    else if (event.key === 'Enter') {
+                        // Decide which team's active player can place a bomb
+                        // For simplicity, let's allow both teams to place bombs with 'Enter'
+                        placeBomb('😀');
+                        placeBomb('😎');
+                        event.preventDefault();
+                    }
+                }
+            });
+    
+            function handleTeamInput(teamIcon, event) {
+                let activeIndex = activePlayerIndices[teamIcon];
+                if (activeIndex === undefined) return; // No active player for this team
+    
+                // Movement keys
+                let keyToDirection = {};
+                if (teamIcon === '😀') {
+                    keyToDirection = {
+                        'ArrowUp': { dx: 0, dy: -1 },
+                        'ArrowDown': { dx: 0, dy: 1 },
+                        'ArrowLeft': { dx: -1, dy: 0 },
+                        'ArrowRight': { dx: 1, dy: 0 }
+                    };
+                } else if (teamIcon === '😎') {
+                    keyToDirection = {
+                        'w': { dx: 0, dy: -1 },
+                        's': { dx: 0, dy: 1 },
+                        'a': { dx: -1, dy: 0 },
+                        'd': { dx: 1, dy: 0 }
+                    };
+                }
+    
+                if (event.key in keyToDirection) {
+                    playerInput = keyToDirection[event.key];
+                    playerInput.teamIcon = teamIcon;
+                }
+                // Switching active player within the team
+                else if ((teamIcon === '😀' && event.key === ' ') || (teamIcon === '😎' && event.key === 'Shift')) {
+                    switchActivePlayer(teamIcon);
+                }
+                // Placing bomb (you may decide to handle bomb placement per team)
+                else if (event.key === 'Enter') {
+                    placeBomb(teamIcon);
+                }
+            }
+    
+            function switchActivePlayer(teamIcon) {
+                let teamPlayerIndices = [];
+                for (let i = 0; i < playerPositions.length; i++) {
+                    if (playerPositions[i].team === teamIcon) {
+                        teamPlayerIndices.push(i);
+                    }
+                }
+    
+                if (teamPlayerIndices.length === 0) return;
+    
+                let currentIndex = activePlayerIndices[teamIcon];
+                let currentPos = teamPlayerIndices.indexOf(currentIndex);
+    
+                // Move to the next player in the team's list
+                let nextPos = (currentPos + 1) % teamPlayerIndices.length;
+                activePlayerIndices[teamIcon] = teamPlayerIndices[nextPos];
+            }
+    
+            // Initialize and draw the game at the start
+            createRandomMap();
+            initializeLevel();
+            drawGame();
+    
+            // Set up the game loop to run at 4 frames per second
+            setInterval(function () {
+                updateGame();
+                drawGame();
+            }, 250);
+        </script>
+    </body>
+    </html>
